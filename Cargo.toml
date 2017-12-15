@@ -1,0 +1,11 @@
+[package]
+name = "blockchain"
+version = "0.1.0"
+authors = ["Adam Szalkowski <adam@szalkowski.de>"]
+
+[dependencies]
+iron = "0.6"
+rustc-serialize = "0.3"
+router = "0.6"
+sha2 = "0.6"
+time = "0.1"
