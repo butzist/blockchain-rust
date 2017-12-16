@@ -9,12 +9,14 @@ use iron::prelude::*;
 use iron::status;
 use router::Router;
 use rustc_serialize::json;
+use std::io::Read;
 
 mod blockchain;
 
 fn main() {
     let mut router = Router::new();
-    let blockchain = Arc::new(Mutex::new(blockchain::Blockchain::new()));
+    let owner = String::from("adam@szalkowski.de");
+    let blockchain = Arc::new(Mutex::new(blockchain::Blockchain::new(owner)));
 
     {
         let blockchain_copy = blockchain.clone();
@@ -27,12 +29,27 @@ fn main() {
 
     {
         let blockchain_copy = blockchain.clone();
-        router.get("/add_block", move |_: &mut Request| {
+        router.get("/mine", move |_: &mut Request| {
             let mut b = blockchain_copy.lock().unwrap();
-            let block = b.new_block();
+            let block = b.mine_block();
             let payload = json::encode(block).unwrap();
             Ok(Response::with((status::Ok, payload)))
-        }, "block");
+        }, "mine");
+    }
+
+    {
+        let blockchain_copy = blockchain.clone();
+        router.get("/transactions/new", move |r: &mut Request| {
+            let mut b = blockchain_copy.lock().unwrap();
+
+            let mut payload = String::new();
+            r.body.read_to_string(&mut payload).unwrap();
+
+            let t : blockchain::Transaction = json::decode(&payload).unwrap();
+
+            b.new_transaction(t);
+            Ok(Response::with((status::Ok, "{}".to_string())))
+        }, "transaction_new");
     }
 
     Iron::new(router).http("localhost:5000").unwrap();
