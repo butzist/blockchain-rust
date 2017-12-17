@@ -22,7 +22,7 @@ fn main() {
         let blockchain_copy = blockchain.clone();
         router.get("/chain", move |_: &mut Request| {
             let b = blockchain_copy.lock().unwrap();
-            let payload = json::encode(&b.chain).unwrap();
+            let payload = json::encode(&b.chain()).unwrap();
             Ok(Response::with((status::Ok, payload)))
         }, "chain");
     }
@@ -44,7 +44,6 @@ fn main() {
 
             let mut payload = String::new();
             r.body.read_to_string(&mut payload).unwrap();
-
             let t : blockchain::Transaction = json::decode(&payload).unwrap();
 
             b.new_transaction(t);

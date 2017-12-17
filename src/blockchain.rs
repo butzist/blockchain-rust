@@ -2,17 +2,11 @@ use rustc_serialize::json;
 use sha2::{Sha256, Digest};
 use time;
 use std::mem;
+use std::cmp::PartialEq;
 
 
-#[derive(RustcEncodable)]
+#[derive(RustcEncodable,RustcDecodable)]
 pub struct Block {
-    pub data: BlockData,
-    pub hash: String,
-}
-
-#[derive(RustcEncodable)]
-pub struct BlockData {
-    pub index: u64,
     pub timestamp: i64,
     pub transactions: Vec<Transaction>,
     pub proof: u64,
@@ -21,48 +15,43 @@ pub struct BlockData {
 
 #[derive(RustcEncodable,RustcDecodable)]
 pub struct Transaction {
-    pub from: String,
+    pub from: Option<String>,
     pub to: String,
     pub amount: f32,
 }
 
-#[derive(RustcEncodable)]
 pub struct Blockchain {
-    pub chain: Vec<Block>,
+    chain: Vec<Block>,
     transactions: Vec<Transaction>,
     owner: String,
+}
+
+impl PartialEq for Block {
+    fn eq(&self, other: &Block) -> bool {
+        self.hash() == other.hash()
+    }
+
+    fn ne(&self, other: &Block) -> bool {
+        self.hash() != other.hash()
+    }
 }
 
 impl Block {
     fn new() -> Block {
         Block {
-            data: BlockData {
-                index: 0,
-                timestamp: 0,
-                transactions: Vec::new(),
-                proof: 0,
-                previous_hash: None,
-            },
-            hash: String::new(),
+            timestamp: 0,
+            transactions: Vec::new(),
+            proof: 0,
+            previous_hash: None,
         }
     }
 
     fn genesis() -> Block {
         let mut b = Block::new();
-        b.data.proof = 100;
+        b.proof = 100;
         b
     }
 
-    pub fn set_hash(&mut self) {
-        self.hash = self.data.hash();
-    }
-
-    pub fn hash_valid(&self) -> bool {
-        self.hash == self.data.hash()
-    }
-}
-
-impl BlockData {
     fn hash(&self) -> String {
         let payload = json::encode(self).unwrap();
 
@@ -84,18 +73,20 @@ impl Blockchain {
         }
     }
 
+    pub fn chain(&self) -> &Vec<Block> {
+        &self.chain
+    }
+
     pub fn new_block(&mut self, proof: u64) -> &Block {
         let mut block = Block::new();
         {
             let last = self.chain.last().unwrap();
-            block.data.index = last.data.index + 1;
-            block.data.previous_hash = Some(last.hash.clone());
+            block.previous_hash = Some(last.hash());
         }
 
-        block.data.timestamp = time::get_time().sec;
-        block.data.transactions = mem::replace(&mut self.transactions, vec!());
-        block.data.proof = proof;
-        block.set_hash();
+        block.timestamp = time::get_time().sec;
+        block.transactions = mem::replace(&mut self.transactions, vec!());
+        block.proof = proof;
 
         self.chain.push(block);
 
@@ -103,8 +94,8 @@ impl Blockchain {
     }
 
     fn last_proof(&self) -> u64 {
-        let ref block = self.chain.last().unwrap();
-        return block.data.proof;
+        let block = self.chain.last().unwrap();
+        return block.proof;
     }
 
     fn proof_of_work(&self) -> u64 {
@@ -133,7 +124,7 @@ impl Blockchain {
         let proof = self.proof_of_work();
 
         let t = Transaction {
-            from: String::new(),
+            from: None,
             to: self.owner.clone(),
             amount: 1f32,
         };
@@ -145,5 +136,26 @@ impl Blockchain {
     pub fn new_transaction(&mut self, t: Transaction) -> &Transaction {
         self.transactions.push(t);
         self.transactions.last().unwrap()
+    }
+
+    pub fn valid_chain(chain: &Vec<Block>) -> bool {
+        if chain.first().unwrap() != &Block::genesis() {
+            return false;
+        }
+
+        chain.iter().zip(chain.iter().skip(1))
+            .all(|(previous_block, block)| {
+                block.previous_hash == Some(previous_block.hash())
+                    && Blockchain::valid_proof(previous_block.proof, block.proof)
+        })
+    }
+
+    pub fn try_update(&mut self, chain: Vec<Block>) -> bool {
+        if Blockchain::valid_chain(&chain) && chain.len() > self.chain.len() {
+            self.chain = chain;
+            true
+        } else {
+            false
+        }
     }
 }
