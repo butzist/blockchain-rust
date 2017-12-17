@@ -2,10 +2,9 @@ use rustc_serialize::json;
 use sha2::{Sha256, Digest};
 use time;
 use std::mem;
-use std::cmp::PartialEq;
 
 
-#[derive(RustcEncodable,RustcDecodable)]
+#[derive(Debug,RustcEncodable,RustcDecodable,PartialEq)]
 pub struct Block {
     pub timestamp: i64,
     pub transactions: Vec<Transaction>,
@@ -13,27 +12,18 @@ pub struct Block {
     pub previous_hash: Option<String>,
 }
 
-#[derive(RustcEncodable,RustcDecodable)]
+#[derive(Debug,RustcEncodable,RustcDecodable,PartialEq)]
 pub struct Transaction {
     pub from: Option<String>,
     pub to: String,
     pub amount: f32,
 }
 
+#[derive(Debug)]
 pub struct Blockchain {
     chain: Vec<Block>,
     transactions: Vec<Transaction>,
     owner: String,
-}
-
-impl PartialEq for Block {
-    fn eq(&self, other: &Block) -> bool {
-        self.hash() == other.hash()
-    }
-
-    fn ne(&self, other: &Block) -> bool {
-        self.hash() != other.hash()
-    }
 }
 
 impl Block {
@@ -138,7 +128,7 @@ impl Blockchain {
         self.transactions.last().unwrap()
     }
 
-    pub fn valid_chain(chain: &Vec<Block>) -> bool {
+    fn valid_chain(chain: &Vec<Block>) -> bool {
         if chain.first().unwrap() != &Block::genesis() {
             return false;
         }
@@ -150,12 +140,12 @@ impl Blockchain {
         })
     }
 
-    pub fn try_update(&mut self, chain: Vec<Block>) -> bool {
+    pub fn try_update(&mut self, chain: Vec<Block>) -> Result<&Vec<Block>, ()> {
         if Blockchain::valid_chain(&chain) && chain.len() > self.chain.len() {
             self.chain = chain;
-            true
+            Ok(&self.chain)
         } else {
-            false
+            Err(())
         }
     }
 }
