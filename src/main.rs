@@ -1,36 +1,57 @@
 extern crate futures;
 extern crate hyper;
-extern crate iron;
+#[macro_use] extern crate iron;
+#[macro_use] extern crate quick_error;
+extern crate bodyparser;
+extern crate logger;
 extern crate sha2;
 extern crate rayon;
 extern crate router;
-extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
+#[macro_use] extern crate serde_derive;
 extern crate time;
 extern crate tokio_core;
 
 use std::sync::{Mutex,Arc};
+use logger::Logger;
 use iron::prelude::*;
+use iron::middleware::*;
+use iron::headers::*;
+use iron::mime::*;
 use iron::status;
 use router::Router;
-use rustc_serialize::json;
-use std::io::Read;
 
 mod blockchain;
 mod nodes;
 
-
-macro_rules! try_iron {
-    ($x:expr) => {
-        match $x {
-            Ok(v) => v,
-            Err(e) => {
-                println!("{}", e);
-                let err = IronError::new(e, (status::InternalServerError, "Internal server error".to_string()));
-                return Err(err);
-            }
+quick_error! {
+    #[derive(Debug)]
+    pub enum APIError {
+        EmptyBody {
+            description("request has empty body")
         }
     }
 }
+
+struct RestAPI;
+
+impl BeforeMiddleware for RestAPI {
+    fn before(&self, _: &mut Request) -> IronResult<()> {
+        Ok(())
+    }
+}
+
+impl AfterMiddleware for RestAPI {
+    fn after(&self, _: &mut Request, mut res: Response) -> IronResult<Response> {
+        if res.status.unwrap() == status::Ok {
+            res.headers.set(ContentType(Mime(TopLevel::Application, SubLevel::Json, Vec::new())));
+        }
+
+        Ok(res)
+    }
+}
+
 
 fn main() {
     let mut router = Router::new();
@@ -42,7 +63,7 @@ fn main() {
         let blockchain_copy = blockchain.clone();
         router.get("/chain", move |_: &mut Request| {
             let b = blockchain_copy.lock().unwrap();
-            let payload = try_iron!(json::encode(&b.chain()));
+            let payload = itry!(serde_json::to_string(&b.chain()));
 
             Ok(Response::with((status::Ok, payload)))
         }, "chain");
@@ -54,22 +75,22 @@ fn main() {
             let mut b = blockchain_copy.lock().unwrap();
             let block = b.mine_block();
 
-            let payload = try_iron!(json::encode(block));
+            let payload = itry!(serde_json::to_string(block));
             Ok(Response::with((status::Ok, payload)))
         }, "mine");
     }
 
     {
         let blockchain_copy = blockchain.clone();
-        router.get("/transactions/new", move |r: &mut Request| {
+        router.post("/transactions/new", move |r: &mut Request| {
             let mut b = blockchain_copy.lock().unwrap();
 
-            let mut payload = String::new();
-            try_iron!(r.body.read_to_string(&mut payload));
-            let t : blockchain::Transaction = try_iron!(json::decode(&payload));
+            let body = itry!(r.get::<bodyparser::Struct<blockchain::Transaction>>());
+            let t = itry!(body.ok_or(APIError::EmptyBody));
 
             b.new_transaction(t);
-            Ok(Response::with((status::Ok, "{}".to_string())))
+
+            Ok(Response::with((status::Ok, "{}")))
         }, "transaction_new");
     }
 
@@ -78,7 +99,7 @@ fn main() {
         router.get("/nodes", move |_: &mut Request| {
             let n = nodes_copy.lock().unwrap();
 
-            let payload = try_iron!(json::encode(&n.nodes()));
+            let payload = itry!(serde_json::to_string(&n.nodes()));
             Ok(Response::with((status::Ok, payload)))
         }, "nodes");
     }
@@ -94,27 +115,31 @@ fn main() {
                 b.try_update(chain).unwrap_or(&Vec::new());
             });
 
-            let payload = "{}";
-            Ok(Response::with((status::Ok, payload)))
+            Ok(Response::with((status::Ok, "{}")))
         }, "nodes_resolve");
     }
 
-
     {
         let nodes_copy = nodes.clone();
-        router.get("/nodes/add", move |r: &mut Request| {
+        router.post("/nodes/add", move |r: &mut Request| {
             let mut n = nodes_copy.lock().unwrap();
 
-            let mut payload = String::new();
-            try_iron!(r.body.read_to_string(&mut payload));
-            let uri : String = try_iron!(json::decode(&payload));
+            let body = itry!(r.get::<bodyparser::Struct<String>>());
+            let uri = itry!(body.ok_or(APIError::EmptyBody));
 
-            try_iron!(n.add_node(uri));
-            Ok(Response::with((status::Ok, "{}".to_string())))
-
+            itry!(n.add_node(uri));
+            Ok(Response::with((status::Ok, "{}")))
         }, "nodes_add");
     }
 
-    Iron::new(router).http("localhost:5000").unwrap();
+    let mut chain = Chain::new(router);
+    chain.link_before(RestAPI);
+    chain.link_after(RestAPI);
+
+    let (logger_before, logger_after) = Logger::new(None);
+    chain.link_before(logger_before);
+    chain.link_after(logger_after);
+
+    Iron::new(chain).http("localhost:5000").unwrap();
     println!("On 5000");
 }

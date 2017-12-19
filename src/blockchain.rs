@@ -1,10 +1,10 @@
-use rustc_serialize::json;
+use serde_json;
 use sha2::{Sha256, Digest};
 use time;
 use std::mem;
 
 
-#[derive(Debug,RustcEncodable,RustcDecodable,PartialEq)]
+#[derive(Debug,Clone,Serialize,Deserialize,PartialEq)]
 pub struct Block {
     pub timestamp: i64,
     pub transactions: Vec<Transaction>,
@@ -12,7 +12,7 @@ pub struct Block {
     pub previous_hash: Option<String>,
 }
 
-#[derive(Debug,RustcEncodable,RustcDecodable,PartialEq)]
+#[derive(Debug,Clone,Serialize,Deserialize,PartialEq)]
 pub struct Transaction {
     pub from: Option<String>,
     pub to: String,
@@ -43,7 +43,7 @@ impl Block {
     }
 
     fn hash(&self) -> String {
-        let payload = json::encode(self).unwrap();
+        let payload = serde_json::to_string(self).unwrap();
 
         let mut hasher = Sha256::default();
         hasher.input(payload.as_bytes());

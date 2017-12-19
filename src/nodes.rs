@@ -3,18 +3,20 @@ use hyper::{error,Client, Uri};
 use tokio_core::reactor::Core;
 use std::error::Error;
 use rayon::prelude::*;
-use rustc_serialize::json;
 use blockchain;
+use std::collections::HashSet;
+use serde_json;
+
 
 #[derive(Debug)]
 pub struct Nodes {
-    nodes: Vec<Uri>,
+    nodes: HashSet<Uri>,
 }
 
 impl Nodes {
     pub fn new() -> Nodes {
         Nodes {
-            nodes: Vec::new(),
+            nodes: HashSet::new(),
         }
     }
 
@@ -24,7 +26,7 @@ impl Nodes {
 
     pub fn add_node(&mut self, uri: String) -> Result<(), error::UriError> {
         let parsed = uri.parse()?;
-        self.nodes.push(parsed);
+        self.nodes.insert(parsed);
 
         Ok(())
     }
@@ -38,7 +40,7 @@ impl Nodes {
 
         let body = result.body().concat2().wait()?;
         let decoded = String::from_utf8(body.to_vec())?;
-        let chain : Vec<blockchain::Block> = json::decode(decoded.as_str())?;
+        let chain : Vec<blockchain::Block> = serde_json::from_str(decoded.as_str())?;
 
         Ok(chain)
     }
